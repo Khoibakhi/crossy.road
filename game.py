@@ -256,4 +256,4 @@ game_code = """
                 case "arrowleft":
                 case "a":
                     if (player.x - grid >= 0) player.x -= grid;
-                    playJumpSound();
+                    playJumpSound();"""
