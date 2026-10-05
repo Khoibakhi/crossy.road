@@ -5,7 +5,7 @@ st.set_page_config(page_title="Gà Con Qua Đường - Crossy Road Clone", layou
 st.markdown("<h1 style='text-align: center;'>🐔 Gà Con Qua Đường 🚧</h1>", unsafe_allow_html=True)
 st.write("Sử dụng các phím mũi tên **Lên / Xuống / Trái / Phải** (hoặc **W, A, S, D**) trên bàn phím để điều khiển chú gà băng qua đường an toàn và tránh các chướng ngại vật khối!")
 
-# Bắt đầu chuỗi mã nguồn game
+# Mã nguồn Game tối ưu hóa không bị chặn luồng render trên Streamlit Cloud
 game_code = """
 <!DOCTYPE html>
 <html>
@@ -14,6 +14,7 @@ game_code = """
         body {
             margin: 0;
             display: flex;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
             background-color: #f0f0f0;
@@ -24,30 +25,43 @@ game_code = """
             border: 4px solid #333;
             background-color: #87ee87;
             box-shadow: 0px 10px 20px rgba(0,0,0,0.3);
+            cursor: pointer;
         }
         #ui {
-            position: absolute;
-            top: 20px;
             font-size: 24px;
             font-weight: bold;
             color: #333;
-            text-shadow: 1px 1px 2px white;
+            margin-bottom: 10px;
         }
     </style>
 </head>
 <body>
     <div id="ui">Điểm: <span id="score">0</span></div>
-    <canvas id="gameCanvas" width="500" height="600"></canvas>
+    <canvas id="gameCanvas" width="500" height="550"></canvas>
 
     <script>
         const canvas = document.getElementById("gameCanvas");
         const ctx = canvas.getContext("2d");
         const scoreEl = document.getElementById("score");
 
-        // Âm thanh giả lập bằng Web Audio API
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        // Khởi tạo Audio lười (Lazy Initialization) bảo mật tốt cho trình duyệt
+        let audioCtx = null;
+        let isMusicPlaying = false;
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            if (!isMusicPlaying) {
+                startBackgroundMusic();
+            }
+        }
         
         function playJumpSound() {
+            if (!audioCtx) return;
             let osc = audioCtx.createOscillator();
             let gain = audioCtx.createGain();
             osc.connect(gain);
@@ -55,13 +69,14 @@ game_code = """
             osc.type = 'sine';
             osc.frequency.setValueAtTime(150, audioCtx.currentTime);
             osc.frequency.exponentialRampToValueAtTime(400, audioCtx.currentTime + 0.15);
-            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
             gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
             osc.start();
             osc.stop(audioCtx.currentTime + 0.15);
         }
 
         function playCrashSound() {
+            if (!audioCtx) return;
             let osc = audioCtx.createOscillator();
             let gain = audioCtx.createGain();
             osc.connect(gain);
@@ -69,17 +84,16 @@ game_code = """
             osc.type = 'sawtooth';
             osc.frequency.setValueAtTime(300, audioCtx.currentTime);
             osc.frequency.linearRampToValueAtTime(60, audioCtx.currentTime + 0.4);
-            gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
             gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
             osc.start();
             osc.stop(audioCtx.currentTime + 0.4);
         }
 
-        let isMusicPlaying = false;
         function startBackgroundMusic() {
-            if (isMusicPlaying) return;
             isMusicPlaying = true;
             setInterval(() => {
+                if (!audioCtx || audioCtx.state === 'suspended') return;
                 let now = audioCtx.currentTime;
                 playNote(261.63, now, 0.2); 
                 playNote(329.63, now + 0.25, 0.2); 
@@ -95,7 +109,7 @@ game_code = """
             gain.connect(audioCtx.destination);
             osc.type = 'triangle';
             osc.frequency.setValueAtTime(freq, startTime);
-            gain.gain.setValueAtTime(0.05, startTime);
+            gain.gain.setValueAtTime(0.03, startTime);
             gain.gain.linearRampToValueAtTime(0, startTime + duration);
             osc.start(startTime);
             osc.stop(startTime + duration);
@@ -106,23 +120,22 @@ game_code = """
 
         let player = {
             x: 5 * grid,
-            y: 11 * grid,
+            y: 10 * grid,
             w: 35,
-            h: 35,
-            color: '#ffffff'
+            h: 35
         };
 
         let lanes = [
-            { y: 1 * grid, speed: -2, color: '#444', obstacles: [{x: 100, w: 70}, {x: 350, w: 70}], type: 'car', carColor: '#3498db' },
-            { y: 2 * grid, speed: 3, color: '#555', obstacles: [{x: 50, w: 90}, {x: 280, w: 90}], type: 'truck', carColor: '#e67e22' },
-            { y: 4 * grid, speed: -1.5, color: '#333', obstacles: [{x: 0, w: 60}, {x: 200, w: 60}, {x: 400, w: 60}], type: 'car', carColor: '#9b59b6' },
-            { y: 6 * grid, speed: 2.5, color: '#2980b9', obstacles: [{x: 20, w: 100}, {x: 250, w: 100}], type: 'log', carColor: '#8e44ad' },
-            { y: 7 * grid, speed: -2, color: '#2980b9', obstacles: [{x: 80, w: 120}, {x: 320, w: 120}], type: 'log', carColor: '#e74c3c' },
-            { y: 9 * grid, speed: 1.8, color: '#444', obstacles: [{x: 150, w: 70}, {x: 400, w: 70}], type: 'car', carColor: '#f1c40f' }
+            { y: 1 * grid, speed: -2, color: '#444', obstacles: [{x: 100, w: 70}, {x: 350, w: 70}], carColor: '#3498db' },
+            { y: 2 * grid, speed: 2.5, color: '#555', obstacles: [{x: 50, w: 90}, {x: 280, w: 90}], carColor: '#e67e22' },
+            { y: 4 * grid, speed: -1.5, color: '#333', obstacles: [{x: 0, w: 60}, {x: 200, w: 60}], carColor: '#9b59b6' },
+            { y: 6 * grid, speed: 2, color: '#2980b9', obstacles: [{x: 20, w: 100}, {x: 250, w: 100}], carColor: '#8e44ad' },
+            { y: 7 * grid, speed: -1.8, color: '#2980b9', obstacles: [{x: 80, w: 120}, {x: 320, w: 120}], carColor: '#e74c3c' },
+            { y: 8 * grid, speed: 1.5, color: '#444', obstacles: [{x: 150, w: 70}, {x: 380, w: 70}], carColor: '#f1c40f' }
         ];
 
         let trees = [
-            {x: 0, y: 10*grid}, {x: 2*grid, y: 10*grid}, {x: 7*grid, y: 10*grid},
+            {x: 0, y: 9*grid}, {x: 2*grid, y: 9*grid}, {x: 7*grid, y: 9*grid},
             {x: 1*grid, y: 5*grid}, {x: 6*grid, y: 5*grid},
             {x: 3*grid, y: 0}, {x: 8*grid, y: 0}
         ];
@@ -172,7 +185,7 @@ game_code = """
                     if (py < lane.y + grid && py + player.h > lane.y) {
                         if (px < obs.x + obs.w && px + player.w > obs.x) {
                             playCrashSound();
-                            alert("Bùm! Chú gà đã va chạm chướng ngại vật. Điểm của bạn: " + score);
+                            alert("Bùm! Chú gà đã va chạm. Điểm của bạn: " + score);
                             resetGame();
                         }
                     }
@@ -182,7 +195,7 @@ game_code = """
 
         function resetGame() {
             player.x = 5 * grid;
-            player.y = 11 * grid;
+            player.y = 10 * grid;
             score = 0;
             scoreEl.innerText = score;
         }
@@ -191,9 +204,8 @@ game_code = """
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             ctx.fillStyle = '#27ae60';
-            ctx.fillRect(0, 11*grid, canvas.width, grid);
             ctx.fillRect(0, 10*grid, canvas.width, grid);
-            ctx.fillRect(0, 8*grid, canvas.width, grid);
+            ctx.fillRect(0, 9*grid, canvas.width, grid);
             ctx.fillRect(0, 5*grid, canvas.width, grid);
             ctx.fillRect(0, 3*grid, canvas.width, grid);
             ctx.fillRect(0, 0, canvas.width, grid);
@@ -235,25 +247,17 @@ game_code = """
             requestAnimationFrame(gameLoop);
         }
 
-        window.addEventListener("keydown", e => {
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume();
-            }
-            startBackgroundMusic();
+        // Kích hoạt tương tác chuột để trình duyệt không khóa khung hình
+        canvas.addEventListener("click", () => {
+            initAudio();
+        });
 
+        window.addEventListener("keydown", e => {
+            initAudio();
             let oldY = player.y;
             switch(e.key.toLowerCase()) {
                 case "arrowup":
                 case "w":
-                    player.y -= grid;
+                    if (player.y - grid >= 0) player.y -= grid;
                     playJumpSound();
-                    break;
-                case "arrowdown":
-                case "s":
-                    if (player.y + grid < canvas.height) player.y += grid;
-                    playJumpSound();
-                    break;
-                case "arrowleft":
-                case "a":
-                    if (player.x - grid >= 0) player.x -= grid;
-                    playJumpSound();"""
+                    break;"""
